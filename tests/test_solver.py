@@ -152,6 +152,12 @@ def test_theta_below_one_half_has_a_wider_limit() -> None:
         solver.run(0.0, 10.0, 5.0)  # any step is accepted
 
 
+def test_a_single_insulated_cell_has_no_step_limit() -> None:
+    problem = Problem1D(Grid1D.uniform(0.0, 1.0, 1), Neumann(2.0), Neumann(0.0))
+    run = TransientSolver(problem, "explicit-euler").run(0.0, 1.0, 0.5)
+    assert run.temperature[0] == pytest.approx(2.0)
+
+
 def test_explicit_euler_at_the_limit_does_not_grow() -> None:
     # Zero data and a rough initial field: the energy norm sum(M T^2) must not
     # grow at the largest stable step.

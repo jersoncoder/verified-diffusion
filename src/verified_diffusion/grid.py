@@ -142,7 +142,7 @@ class Grid1D:
     @property
     def max_width_ratio(self) -> float:
         """Largest cell width divided by the smallest."""
-        return float(self._widths.max() / self._widths.min())
+        return float(np.max(self._widths) / np.min(self._widths))
 
     def __repr__(self) -> str:
         return f"Grid1D(n={self.n}, start={self.start:g}, stop={self.stop:g})"

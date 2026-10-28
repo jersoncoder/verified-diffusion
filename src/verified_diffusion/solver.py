@@ -216,7 +216,7 @@ class TransientSolver:
     @property
     def max_stable_dt(self) -> float:
         """Largest stable time step (infinite for ``theta >= 1/2``)."""
-        if self.theta >= 0.5:
+        if self.theta >= 0.5 or self._lambda == 0.0:
             return math.inf
         return 2.0 / ((1.0 - 2.0 * self.theta) * self._lambda)
 

@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from numpy.typing import ArrayLike
 
 from verified_diffusion.grid import Grid1D, Grid2D
 
@@ -52,9 +53,9 @@ def test_stretched_grid_widths_vary_smoothly() -> None:
     "faces",
     [[0.0], [[0.0, 1.0]], [0.0, 0.0, 1.0], [1.0, 0.0], [0.0, np.nan]],
 )
-def test_invalid_faces_are_rejected(faces: object) -> None:
+def test_invalid_faces_are_rejected(faces: ArrayLike) -> None:
     with pytest.raises(ValueError, match="faces"):
-        Grid1D(faces)  # type: ignore[arg-type]
+        Grid1D(faces)
 
 
 def test_invalid_arguments_are_rejected() -> None:

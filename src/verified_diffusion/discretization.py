@@ -65,8 +65,6 @@ class ConductanceMatrix(Protocol):
         """Factorize ``diag(mass) + scale * A`` (or ``A`` if ``mass`` is None) once."""
         ...
 
-    def diagonal(self) -> FloatArray: ...
-
     def abs_row_sums(self) -> FloatArray:
         """``sum_j |A_ij|`` for each row."""
         ...
@@ -91,9 +89,6 @@ class TridiagonalConductance:
         else:
             lu = TridiagonalLU(scale * self.lower, mass + scale * self.diag, scale * self.upper)
         return lu.solve
-
-    def diagonal(self) -> FloatArray:
-        return self.diag.copy()
 
     def abs_row_sums(self) -> FloatArray:
         out = np.abs(self.diag)
@@ -122,9 +117,6 @@ class SparseConductance:
             return np.asarray(lu.solve(rhs), dtype=np.float64)
 
         return solve
-
-    def diagonal(self) -> FloatArray:
-        return np.asarray(self.matrix.diagonal(), dtype=np.float64)
 
     def abs_row_sums(self) -> FloatArray:
         return np.asarray(abs(self.matrix).sum(axis=1), dtype=np.float64).ravel()
@@ -285,9 +277,10 @@ class FiniteVolumeSystem:
     def stability_bound(self) -> float:
         """Gershgorin upper bound on the eigenvalues of ``M^-1 A``.
 
-        ``max_i (A_ii + sum_j |A_ij|) / M_i``. ``A`` is symmetric and ``M``
-        diagonal and positive, so ``M^-1 A`` has real non-negative eigenvalues,
-        all below this bound.
+        ``max_i sum_j |A_ij| / M_i`` (the sum includes the diagonal). ``A`` is
+        symmetric and ``M`` diagonal and positive, so ``M^-1 A`` is similar to a
+        symmetric matrix and has real non-negative eigenvalues, all below this
+        bound.
         """
         return float(np.max(self.matrix.abs_row_sums() / self.mass))
 
@@ -455,7 +448,7 @@ def _assemble_2d(problem: Problem2D) -> FiniteVolumeSystem:
         centres=centres,
         volume=volume,
         mass=rho_c.ravel() * volume,
-        conductivity=k,
+        conductivity=k.ravel(),
         matrix=SparseConductance(matrix),
         sides=sides,
         source_spec=problem.source,
