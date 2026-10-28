@@ -25,6 +25,19 @@ def test_semi_infinite_solution_limits_and_equation() -> None:
         analytic.semi_infinite_step(0.0, 0.0, alpha=1.0, T_initial=0.0, T_surface=1.0)
 
 
+def test_erfc_study_domain_is_long_enough_to_stand_for_a_half_space() -> None:
+    from verified_diffusion import studies
+
+    far = analytic.semi_infinite_step(
+        studies.ERFC_LENGTH,
+        studies.ERFC_END,
+        alpha=studies.ERFC_ALPHA,
+        T_initial=0.0,
+        T_surface=1.0,
+    )
+    assert float(far) < 1e-9
+
+
 def test_slab_eigenvalues_solve_the_characteristic_equation() -> None:
     lam = analytic.slab_convection_eigenvalues(5.0, 50)
     np.testing.assert_allclose(lam * np.tan(lam), 5.0, rtol=1e-10)

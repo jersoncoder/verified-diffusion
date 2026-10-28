@@ -218,3 +218,22 @@ def test_argument_validation() -> None:
         solver.run(0.0, 0.0, 0.1)
     with pytest.raises(ValueError, match="dt"):
         solver.run(0.0, 1.0, -0.1)
+
+
+def test_startup_steps_take_implicit_half_steps_and_keep_the_balance() -> None:
+    problem = Problem1D(Grid1D.uniform(0.0, 1.0, 10), Dirichlet(1.0), Neumann(0.0))
+    solver = TransientSolver(problem, "crank-nicolson")
+    run = solver.run(0.0, 1.0, 0.1, startup_steps=2)
+    # Two steps become four half steps; the remaining eight are Crank-Nicolson.
+    assert len(run.balances) == 12
+    np.testing.assert_allclose(run.times[:6], [0.0, 0.05, 0.1, 0.15, 0.2, 0.3])
+    assert run.times[-1] == 1.0
+    assert run.max_relative_residual < ROUND_OFF
+    assert len(solver._factors) == 2
+
+    # The half steps are implicit Euler: the same as an implicit run with dt / 2.
+    implicit = TransientSolver(problem, "implicit-euler").run(0.0, 0.2, 0.05)
+    after_startup = TransientSolver(problem, "crank-nicolson").run(0.0, 0.2, 0.1, startup_steps=2)
+    np.testing.assert_allclose(after_startup.temperature, implicit.temperature, rtol=1e-14)
+    with pytest.raises(ValueError, match="startup_steps"):
+        solver.run(0.0, 1.0, 0.1, startup_steps=-1)

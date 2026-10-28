@@ -28,6 +28,12 @@ from .verification import ConvergenceStudy, error_norms
 
 FloatArray = NDArray[np.float64]
 
+ORDER_TOLERANCE = 0.1
+"""The observed order between the two finest levels must lie this close to the theory."""
+
+STRETCHED_2D_MAX_NORM_FLOOR = 1.75
+"""Lower bound for the max-norm order on the stretched 2D grid (see docs/verification.md)."""
+
 # Manufactured solutions ------------------------------------------------------
 
 STEADY_1D = ManufacturedSolution(sympy.exp(x) * sympy.sin(2 * sympy.pi * x) + 1)
@@ -64,6 +70,7 @@ ROBIN_H = 4.0
 
 
 def _stretched_2d(n: int) -> Grid2D:
+    """Unit square, clustered at both ends in x and at the bottom in y."""
     return Grid2D(
         Grid1D.stretched(0.0, 1.0, n, beta=1.5, cluster="both"),
         Grid1D.stretched(0.0, 1.0, n, beta=1.5, cluster="left"),
@@ -120,7 +127,7 @@ def steady_space_1d_stretched(levels: Sequence[int] = (8, 16, 32, 64, 128)) -> C
     )
 
 
-def steady_space_2d(levels: Sequence[int] = (8, 16, 32, 64, 128)) -> ConvergenceStudy:
+def steady_space_2d(levels: Sequence[int] = (8, 16, 32, 64, 128, 256)) -> ConvergenceStudy:
     """Steady MMS in 2D, stretched in both directions, variable k, all three kinds of side."""
     exact = STEADY_2D.exact()
     l2, mx = [], []
@@ -311,6 +318,7 @@ def erfc_study(
         l2,
         mx,
         expected,
+        length=ERFC_LENGTH,
     )
 
 
@@ -592,13 +600,14 @@ def _study(
     l2: Sequence[float],
     mx: Sequence[float],
     expected: float,
+    length: float = 1.0,
 ) -> ConvergenceStudy:
     return ConvergenceStudy(
         name=name,
         description=description,
         parameter=parameter,
         levels=tuple(levels),
-        sizes=tuple(1.0 / n for n in levels),
+        sizes=tuple(length / n for n in levels),
         errors_l2=tuple(l2),
         errors_max=tuple(mx),
         expected_order=expected,

@@ -3,8 +3,8 @@
 Tolerance: the observed order between the two finest levels must lie within
 ``ORDER_TOL`` of the theoretical order. The one exception is documented in
 docs/verification.md: on the stretched 2D grid the max-norm order rises
-towards 2 more slowly (largest error next to a corner where two Dirichlet
-sides meet across cells of aspect ratio near 5), so it is held to a lower
+towards 2 more slowly (largest error next to the corner where two Dirichlet
+sides meet and the cells are stretched the most), so it is held to a lower
 bound instead.
 """
 
@@ -16,8 +16,8 @@ import pytest
 from verified_diffusion import TransientSolver, studies
 from verified_diffusion.verification import ConvergenceStudy, observed_orders
 
-ORDER_TOL = 0.1
-STRETCHED_2D_MAX_NORM_FLOOR = 1.75
+ORDER_TOL = studies.ORDER_TOLERANCE
+STRETCHED_2D_MAX_NORM_FLOOR = studies.STRETCHED_2D_MAX_NORM_FLOOR
 
 
 def assert_order(study: ConvergenceStudy, max_norm_floor: float | None = None) -> None:
