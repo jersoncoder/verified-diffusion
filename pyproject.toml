@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "verified-diffusion"
+version = "0.1.0"
+description = "Finite-volume heat conduction solver in 1D and 2D with code verification by manufactured solutions, analytic solutions and grid convergence."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Jerson Montes" }]
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Typing :: Typed",
+]
+
+[project.optional-dependencies]
+plot = ["matplotlib>=3.8"]
+dev = [
+    "sympy>=1.12",
+    "matplotlib>=3.8",
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "mypy>=1.10",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/verified_diffusion"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "SIM", "RUF", "NPY", "PT"]
+ignore = [
+    "N803", # argument names such as `T0` follow the physics notation
+    "N806", # local names such as `T` and `A` follow the physics notation
+]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src", "tests", "scripts"]
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["scipy.*", "sympy.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers -m 'not slow'"
+markers = ["slow: larger studies, excluded by default (run with -m slow)"]
