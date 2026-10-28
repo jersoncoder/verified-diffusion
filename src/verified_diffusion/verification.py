@@ -52,7 +52,9 @@ class ConvergenceStudy:
 
     ``parameter`` is the quantity being refined ("h" for the cell size, "dt"
     for the time step); ``sizes`` are its values (coarse to fine) and
-    ``levels`` the matching cell or step counts.
+    ``levels`` the matching cell or step counts. ``worst_cell``, when
+    recorded, is the centre of the cell with the largest error on the finest
+    level.
     """
 
     name: str
@@ -63,6 +65,7 @@ class ConvergenceStudy:
     errors_l2: tuple[float, ...]
     errors_max: tuple[float, ...]
     expected_order: float
+    worst_cell: tuple[float, ...] = ()
 
     def errors(self, norm: Norm = "l2") -> tuple[float, ...]:
         return self.errors_l2 if norm == "l2" else self.errors_max

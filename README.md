@@ -266,7 +266,8 @@ These are deliberate omissions, not hidden failures.
   uniform 1D grid, so its own coefficient in the update turns negative above
   $Fo = 1/3$ and the discrete maximum principle can fail between those two values.
 * **Max-norm order on stretched 2D grids** approaches 2 more slowly than the L2
-  order, with the largest error next to a corner between two Dirichlet sides.
+  order, with the largest error in the top row of cells near a corner, where
+  the cells are tall and narrow.
   The convergence argument for the boundary closure is a 1D steady one; the 2D
   and transient evidence is the measured orders.
 * **Plain Crank-Nicolson with discontinuous data** does not converge in the max

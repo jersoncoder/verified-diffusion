@@ -3,9 +3,8 @@
 Tolerance: the observed order between the two finest levels must lie within
 ``ORDER_TOL`` of the theoretical order. The one exception is documented in
 docs/verification.md: on the stretched 2D grid the max-norm order rises
-towards 2 more slowly (largest error next to the corner where two Dirichlet
-sides meet and the cells are stretched the most), so it is held to a lower
-bound instead.
+towards 2 more slowly (largest error in the row of tall, narrow cells along
+the top side, near a corner), so it is held to a lower bound instead.
 """
 
 from collections.abc import Callable

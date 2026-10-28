@@ -80,8 +80,8 @@ This argument is a 1D steady one. For 2D and transient problems the error flow
 is not constant along a line, and the evidence is empirical: the manufactured
 solution studies measure second order in the L2 and max norms with every kind
 of side, on uniform and stretched grids. On the stretched 2D grid the max-norm
-order rises towards 2 more slowly, with its largest error next to a corner
-where two Dirichlet sides meet (the numbers are in
+order rises towards 2 more slowly, with its largest error in the row of tall,
+narrow cells along the top side, near a corner (the numbers are in
 [verification.md](verification.md)).
 
 ## Why not a higher-order ghost cell

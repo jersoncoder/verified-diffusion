@@ -135,7 +135,8 @@ def steady_space_2d(levels: Sequence[int] = (8, 16, 32, 64, 128, 256)) -> Conver
         grid = _stretched_2d(n)
         problem = STEADY_2D.problem_2d(grid, MIXED_2D, ROBIN_H)
         X, Y = grid.centres()
-        e = error_norms(solve_steady(problem).temperature, exact(X, Y, 0.0), grid.volumes())
+        T, T_exact = solve_steady(problem).temperature, exact(X, Y, 0.0)
+        e = error_norms(T, T_exact, grid.volumes())
         l2.append(e[0])
         mx.append(e[1])
     return _study(
@@ -146,6 +147,7 @@ def steady_space_2d(levels: Sequence[int] = (8, 16, 32, 64, 128, 256)) -> Conver
         l2,
         mx,
         2.0,
+        worst_cell=_worst_cell(T - T_exact, (X, Y)),
     )
 
 
@@ -189,7 +191,8 @@ def transient_space_2d(
         problem = TRANSIENT_2D.problem_2d(grid, MIXED_2D, ROBIN_H)
         X, Y = grid.centres()
         run = TransientSolver(problem, "crank-nicolson").run(exact(X, Y, 0.0), t_end, 0.25 / n)
-        e = error_norms(run.temperature, exact(X, Y, t_end), grid.volumes())
+        T, T_exact = run.temperature, exact(X, Y, t_end)
+        e = error_norms(T, T_exact, grid.volumes())
         l2.append(e[0])
         mx.append(e[1])
     return _study(
@@ -200,6 +203,7 @@ def transient_space_2d(
         l2,
         mx,
         2.0,
+        worst_cell=_worst_cell(T - T_exact, (X, Y)),
     )
 
 
@@ -601,6 +605,7 @@ def _study(
     mx: Sequence[float],
     expected: float,
     length: float = 1.0,
+    worst_cell: tuple[float, ...] = (),
 ) -> ConvergenceStudy:
     return ConvergenceStudy(
         name=name,
@@ -611,4 +616,11 @@ def _study(
         errors_l2=tuple(l2),
         errors_max=tuple(mx),
         expected_order=expected,
+        worst_cell=worst_cell,
     )
+
+
+def _worst_cell(error: FloatArray, centres: tuple[FloatArray, ...]) -> tuple[float, ...]:
+    """Centre coordinates of the cell where ``|error|`` is largest."""
+    index = np.unravel_index(int(np.argmax(np.abs(error))), error.shape)
+    return tuple(float(c[index]) for c in centres)
