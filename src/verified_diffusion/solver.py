@@ -30,7 +30,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from .discretization import FiniteVolumeSystem, Solve, assemble
+from .discretization import FiniteVolumeSystem, Forcing, Solve, assemble
 from .problem import Problem, cell_field
 
 FloatArray = NDArray[np.float64]
@@ -135,8 +135,10 @@ class SteadySolution:
 class TransientSolution:
     """Result of :meth:`TransientSolver.run`.
 
-    ``temperature`` is the field at ``times[-1]``. ``snapshots`` holds the
-    fields at ``snapshot_times`` when the run was asked to save them.
+    ``times`` holds the start time and the end time of every step (start-up
+    half steps included), matching ``balances`` one to one after the first
+    entry. ``temperature`` is the field at ``times[-1]``. ``snapshots`` holds
+    the fields at ``snapshot_times`` when the run was asked to save them.
     """
 
     times: FloatArray
@@ -187,7 +189,8 @@ class TransientSolver:
     """Theta-method time integration of a :class:`Problem1D` or :class:`Problem2D`.
 
     The matrix ``M + theta dt A`` is factorized once per time step size (Thomas
-    in 1D, SuperLU in 2D) and reused while ``dt`` stays the same.
+    in 1D, SuperLU in 2D) and reused while ``dt`` stays the same. Implicit
+    Euler start-up steps (see :meth:`run`) use a second factorization.
 
     For ``theta < 1/2`` the scheme is stable only for ``dt <= 2 / ((1 - 2 theta)
     lambda)``, where ``lambda`` bounds the eigenvalues of ``M^-1 A``
@@ -205,7 +208,8 @@ class TransientSolver:
         self.system = assemble(problem)
         self._lambda = self.system.stability_bound()
         self._abs_rows = self.system.matrix.abs_row_sums()
-        self._factor: tuple[float, Solve] | None = None
+        self._factors: dict[tuple[float, float], Solve] = {}
+        self._forcing_cache: tuple[Forcing, ...] = ()
 
     # Stability -------------------------------------------------------------
 
@@ -247,7 +251,7 @@ class TransientSolver:
         field = np.asarray(T, dtype=np.float64)
         if field.shape != self.system.shape:
             raise ValueError(f"T must have shape {self.system.shape}, got {field.shape}")
-        new, balance = self._step(field.ravel(), t, dt)
+        new, balance = self._step(field.ravel(), t, dt, self.theta)
         return new.reshape(self.system.shape), balance
 
     def run(
@@ -257,6 +261,7 @@ class TransientSolver:
         dt: float,
         t_start: float = 0.0,
         save_every: int = 0,
+        startup_steps: int = 0,
     ) -> TransientSolution:
         """Integrate from ``t_start`` to ``t_end`` with steps of at most ``dt``.
 
@@ -264,16 +269,24 @@ class TransientSolver:
         step actually used is ``(t_end - t_start) / n``, never larger than
         ``dt``. With ``save_every = k > 0`` the field is stored every ``k``
         steps, plus the first and last.
+
+        ``startup_steps = m`` replaces each of the first ``m`` steps by two
+        implicit Euler steps of half the size (Rannacher time-stepping).
+        Crank-Nicolson damps stiff components only weakly (its amplification
+        factor tends to -1), so data that jump at the start, such as a sudden
+        surface temperature, leave an error that does not converge; two or
+        more start-up steps remove it while keeping the scheme second order.
         """
         if not t_end > t_start:
             raise ValueError("t_end must be greater than t_start")
         if not dt > 0.0:
             raise ValueError("dt must be positive")
+        if startup_steps < 0:
+            raise ValueError("startup_steps must be non-negative")
         n = max(1, math.ceil((t_end - t_start) / dt - 1e-9))
         step = (t_end - t_start) / n
         T = self.initial_field(T0).ravel()
-        times = np.asarray(t_start + step * np.arange(n + 1), dtype=np.float64)
-        times[-1] = t_end
+        times = [t_start]
         balances: list[StepBalance] = []
         saved_t: list[float] = []
         saved: list[FloatArray] = []
@@ -281,13 +294,22 @@ class TransientSolver:
             saved_t.append(t_start)
             saved.append(T.reshape(self.system.shape).copy())
         for k in range(n):
-            T, balance = self._step(T, float(times[k]), step)
-            balances.append(balance)
+            t = t_start + k * step
+            if k < startup_steps:
+                for half in (0.0, 0.5):
+                    T, balance = self._step(T, t + half * step, 0.5 * step, 1.0)
+                    balances.append(balance)
+                    times.append(balance.t)
+            else:
+                T, balance = self._step(T, t, step, self.theta)
+                balances.append(balance)
+                times.append(balance.t)
             if save_every > 0 and ((k + 1) % save_every == 0 or k + 1 == n):
-                saved_t.append(float(times[k + 1]))
+                saved_t.append(times[-1])
                 saved.append(T.reshape(self.system.shape).copy())
+        times[-1] = t_end
         return TransientSolution(
-            times=times,
+            times=np.array(times),
             temperature=T.reshape(self.system.shape),
             balances=tuple(balances),
             snapshot_times=np.array(saved_t),
@@ -295,40 +317,59 @@ class TransientSolver:
             system=self.system,
         )
 
-    def _solver(self, dt: float) -> Solve:
-        if self._factor is None or self._factor[0] != dt:
-            solve = self.system.matrix.factorize(self.system.mass, self.theta * dt)
-            self._factor = (dt, solve)
-        return self._factor[1]
+    def _solver(self, theta: float, dt: float) -> Solve:
+        # One factorization per (theta, dt); a run uses at most two (the
+        # optional implicit start-up and the main scheme).
+        key = (theta, dt)
+        if key not in self._factors:
+            if len(self._factors) >= 2:
+                self._factors.pop(next(iter(self._factors)))
+            self._factors[key] = self.system.matrix.factorize(self.system.mass, theta * dt)
+        return self._factors[key]
 
-    def _step(self, T: FloatArray, t: float, dt: float) -> tuple[FloatArray, StepBalance]:
+    def _forcing(self, t: float) -> Forcing:
+        # A step needs the data at both of its ends, and the end of one step is
+        # the start of the next: keep the two most recent evaluations.
+        for cached in self._forcing_cache:
+            if cached.t == t:
+                return cached
+        forcing = self.system.forcing(t)
+        self._forcing_cache = (*self._forcing_cache[-1:], forcing)
+        return forcing
+
+    def _step(
+        self, T: FloatArray, t: float, dt: float, theta: float
+    ) -> tuple[FloatArray, StepBalance]:
         if not dt > 0.0:
             raise ValueError("dt must be positive")
-        self.check_stability(dt)
-        system, theta = self.system, self.theta
+        if theta == self.theta:
+            self.check_stability(dt)
+        system = self.system
         t_new = t + dt
-        b0, s0 = system.boundary_rate(t), system.source_rate(t)
-        b1, s1 = system.boundary_rate(t_new), system.source_rate(t_new)
-        rhs = system.mass * T + dt * (theta * (b1 + s1) + (1.0 - theta) * (b0 + s0))
+        f0, f1 = self._forcing(t), self._forcing(t_new)
+        r0, r1 = f0.boundary + f0.source, f1.boundary + f1.source
+        rhs = system.mass * T + dt * (theta * r1 + (1.0 - theta) * r0)
         if theta < 1.0:
             rhs -= (1.0 - theta) * dt * system.matrix.matvec(T)
-        T_new = rhs / system.mass if theta == 0.0 else self._solver(dt)(rhs)
+        T_new = rhs / system.mass if theta == 0.0 else self._solver(theta, dt)(rhs)
 
-        flow0 = system.boundary_heat_flow(T, t)
-        flow1 = system.boundary_heat_flow(T_new, t_new)
+        flow0 = system.boundary_heat_flow(T, t, f0)
+        flow1 = system.boundary_heat_flow(T_new, t_new, f1)
         boundary = {
             name: dt * (theta * flow1[name] + (1.0 - theta) * flow0[name]) for name in flow0
         }
-        source = dt * (theta * float(s1.sum()) + (1.0 - theta) * float(s0.sum()))
+        source = dt * (theta * float(f1.source.sum()) + (1.0 - theta) * float(f0.source.sum()))
         stored = float(system.mass @ (T_new - T))
         scale = float(
             system.mass @ (np.abs(T) + np.abs(T_new))
-            + dt * theta * (self._abs_rows @ np.abs(T_new))
-            + dt * (1.0 - theta) * (self._abs_rows @ np.abs(T))
-            + dt * theta * (np.abs(b1).sum() + np.abs(s1).sum())
-            + dt * (1.0 - theta) * (np.abs(b0).sum() + np.abs(s0).sum())
+            + dt * theta * (self._abs_rows @ np.abs(T_new) + _abs_sum(f1))
+            + dt * (1.0 - theta) * (self._abs_rows @ np.abs(T) + _abs_sum(f0))
         )
         balance = StepBalance(
             t=t_new, dt=dt, stored=stored, boundary=boundary, source=source, scale=scale
         )
         return T_new, balance
+
+
+def _abs_sum(forcing: Forcing) -> float:
+    return float(np.abs(forcing.boundary).sum() + np.abs(forcing.source).sum())

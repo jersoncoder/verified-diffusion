@@ -194,6 +194,20 @@ def _boundary_side(
 
 
 @dataclass(frozen=True)
+class Forcing:
+    """Boundary data and source evaluated at one time ``t``.
+
+    ``drives`` holds each side's face contributions to ``b(t)``, ``boundary``
+    is ``b(t)`` gathered into cells and ``source`` is ``s(t)``.
+    """
+
+    t: float
+    drives: tuple[FloatArray, ...]
+    boundary: FloatArray
+    source: FloatArray
+
+
+@dataclass(frozen=True)
 class FiniteVolumeSystem:
     """The assembled semi-discrete system ``M dT/dt = -A T + b(t) + s(t)``.
 
@@ -229,20 +243,36 @@ class FiniteVolumeSystem:
         q = cell_field(value, (), self.shape, "source").ravel()
         return self.volume * q
 
+    def forcing(self, t: float) -> Forcing:
+        """Evaluate the boundary data and the source once at time ``t``."""
+        drives = tuple(side.drive(t) for side in self.sides)
+        boundary = np.zeros(self.size)
+        for side, drive in zip(self.sides, drives, strict=True):
+            np.add.at(boundary, side.cells, drive)
+        return Forcing(t=t, drives=drives, boundary=boundary, source=self.source_rate(t))
+
     def boundary_rate(self, t: float) -> FloatArray:
         """``b(t)``: the boundary data gathered into the cells next to each face."""
-        out = np.zeros(self.size)
-        for side in self.sides:
-            np.add.at(out, side.cells, side.drive(t))
-        return out
+        return self.forcing(t).boundary
 
     def rhs(self, t: float) -> FloatArray:
         """``b(t) + s(t)``."""
-        return self.boundary_rate(t) + self.source_rate(t)
+        forcing = self.forcing(t)
+        return forcing.boundary + forcing.source
 
-    def boundary_heat_flow(self, T: FloatArray, t: float) -> dict[str, float]:
-        """Heat flow entering through each side at time ``t`` for the flat field ``T``."""
-        return {side.name: float(side.face_heat_flow(T, t).sum()) for side in self.sides}
+    def boundary_heat_flow(
+        self, T: FloatArray, t: float, forcing: Forcing | None = None
+    ) -> dict[str, float]:
+        """Heat flow entering through each side at time ``t`` for the flat field ``T``.
+
+        ``forcing`` may pass data already evaluated at ``t``.
+        """
+        if forcing is None:
+            forcing = self.forcing(t)
+        return {
+            side.name: float((drive - side.conductance * T[side.cells]).sum())
+            for side, drive in zip(self.sides, forcing.drives, strict=True)
+        }
 
     def time_derivative(self, t: float, T: FloatArray) -> FloatArray:
         """Right-hand side of the semi-discrete ODE, ``dT/dt = M^-1 (b + s - A T)``.
